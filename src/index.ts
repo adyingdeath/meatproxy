@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { run } from "./core.js";
-import { registerHello } from "./commands/hello.js";
+import { registerInit } from "./commands/init.js";
 
 const program = new Command();
 
@@ -11,6 +11,6 @@ program
     .version("1.0.0")
     .action(run);
 
-registerHello(program);
+registerInit(program);
 
 await program.parseAsync();

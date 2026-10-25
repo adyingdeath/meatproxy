@@ -1,4 +1,5 @@
 import clipboard from "clipboardy";
+import { OutputConsole } from "./console.js";
 import { Tools } from "./tools.js";
 
 export const HEAD_MARKER = "<<<<<<< MEATPROXY";
@@ -72,8 +73,15 @@ export function extractCodeBlock(text: string): string {
 }
 
 
+// Function bodies are normally sync; an async body lets the clipboard code use
+// top-level await (for example `await tools.pwsh(...)`).
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+    ...args: string[]
+) => (...params: unknown[]) => Promise<unknown>;
+
 /**
- * read the clipboard, pull the MEATPROXY code block out of it and run that code.
+ * Read the clipboard, pull the MEATPROXY code block out of it, run that code and
+ * copy whatever it printed back to the clipboard for the next round.
  */
 export async function run(): Promise<void> {
     let text: string;
@@ -85,11 +93,31 @@ export async function run(): Promise<void> {
         return;
     }
 
-    try {
-        const code = extractCodeBlock(text);
-        const func = new Function("tools", code);
-        func(new Tools());
-    } catch (error) {
-        console.log(error);
+    const code = extractCodeBlock(text);
+    if (code.length === 0) {
+        return;
     }
+
+    const captured = new OutputConsole();
+
+    try {
+        const func = new AsyncFunction("tools", "console", code);
+        await func(new Tools(), captured);
+    } catch (error) {
+        captured.log(error);
+    }
+
+    if (captured.lines.length === 0) {
+        console.log("No output to copy.");
+        return;
+    }
+
+    try {
+        await clipboard.write(captured.lines.join("\n"));
+    } catch (error) {
+        console.log("could not write to the clipboard");
+        return;
+    }
+
+    console.log("Output copied to the clipboard. Paste it back to the agent.");
 }
