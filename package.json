@@ -1,6 +1,6 @@
 {
   "name": "@adyingdeath/meatproxy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MeatProxy is a small bridge between your clipboard and chatbots.",
   "scripts": {
     "dev": "tsx src/index.ts",
@@ -9,7 +9,13 @@
     "start": "node dist/index.js",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
-  "keywords": ["cli", "ai", "llm", "agent", "agent harness"],
+  "keywords": [
+    "cli",
+    "ai",
+    "llm",
+    "agent",
+    "agent harness"
+  ],
   "author": "adyingdeath",
   "license": "MIT",
   "repository": {
