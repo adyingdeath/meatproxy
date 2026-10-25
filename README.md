@@ -14,7 +14,7 @@ It is a small bridge between your clipboard and chatbots: paste the prompt into 
 ## Install
 
 ```sh
-npm install -g meatproxy
+npm install -g @adyingdeath/meatproxy
 ```
 
 This provides the `mtp` command (also available as `meatproxy`).
