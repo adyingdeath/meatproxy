@@ -1,7 +1,8 @@
-import clipboard from 'clipboardy';
+import clipboard from "clipboardy";
+import { Tools } from "./tools.js";
 
-export const HEAD_MARKER = '<<<<<<< MEATPROXY';
-export const TAIL_MARKER = '>>>>>>> MEATPROXY';
+export const HEAD_MARKER = "<<<<<<< MEATPROXY";
+export const TAIL_MARKER = ">>>>>>> MEATPROXY";
 
 const INVALID_MARKER_MESSAGE = `Error: Invalid format.
 Expected format:
@@ -59,7 +60,7 @@ export function extractCodeBlock(text: string): string {
 
     const code = lines
         .slice(head + 1, tail)
-        .join('\n')
+        .join("\n")
         .trim();
 
     if (code.length === 0) {
@@ -86,9 +87,8 @@ export async function run(): Promise<void> {
 
     try {
         const code = extractCodeBlock(text);
-        // TODO: a Tool class containing necessary tools for agent to do edit.
-        const func = new Function("", code);
-        func();
+        const func = new Function("tools", code);
+        func(new Tools());
     } catch (error) {
         console.log(error);
     }
