@@ -17,7 +17,7 @@ It is a small bridge between your clipboard and chatbots: paste the prompt into 
 npm install -g @adyingdeath/meatproxy
 ```
 
-This provides the `mtp` command (also available as `meatproxy`).
+This provides the `mtp` command.
 
 ## Usage
 
@@ -44,5 +44,5 @@ The snippet gets a `tools` object with four methods: `read`, `write`, `edit` and
 ```sh
 npm install
 npm run build # bundles to dist/
-npm run dev # runs src/index.ts directly
+npm run dev   # runs src/index.ts directly
 ```
