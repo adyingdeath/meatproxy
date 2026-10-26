@@ -1,6 +1,7 @@
 import clipboard from "clipboardy";
-import { OutputConsole } from "./console.js";
+import { Console } from "./console.js";
 import { Tools } from "./tools.js";
+import chalk from "chalk";
 
 export const HEAD_MARKER = "<<<<<<< MEATPROXY";
 export const TAIL_MARKER = ">>>>>>> MEATPROXY";
@@ -89,7 +90,7 @@ export async function run(): Promise<void> {
     try {
         text = await clipboard.read();
     } catch (error) {
-        console.log("could not read the clipboard");
+        console.log(chalk.red("could not read the clipboard"));
         return;
     }
 
@@ -98,24 +99,24 @@ export async function run(): Promise<void> {
         return;
     }
 
-    const captured = new OutputConsole();
+    const vmConsole = new Console();
 
     try {
         const func = new AsyncFunction("tools", "console", code);
-        await func(new Tools(), captured);
+        await func(new Tools(), vmConsole);
     } catch (error) {
-        captured.log(error);
+        vmConsole.log(error);
     }
 
-    if (captured.lines.length === 0) {
+    if (vmConsole.lines.length === 0) {
         console.log("No output to copy.");
         return;
     }
 
     try {
-        await clipboard.write(captured.lines.join("\n"));
+        await clipboard.write(vmConsole.lines.join("\n"));
     } catch (error) {
-        console.log("could not write to the clipboard");
+        console.log(chalk.red("could not write to the clipboard"));
         return;
     }
 
