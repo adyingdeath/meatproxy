@@ -28,8 +28,7 @@
   },
   "type": "module",
   "bin": {
-    "mtp": "./dist/index.js",
-    "meatproxy": "./dist/index.js"
+    "mtp": "./dist/index.js"
   },
   "files": [
     "dist"

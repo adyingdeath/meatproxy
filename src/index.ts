@@ -6,9 +6,9 @@ import { registerInit } from "./commands/init.js";
 const program = new Command();
 
 program
-    .name("mp")
+    .name("mtp")
     .description("MeatProxy CLI")
-    .version("1.0.0")
+    .version("1.0.1")
     .action(run);
 
 registerInit(program);
