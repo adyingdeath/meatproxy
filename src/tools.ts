@@ -1,44 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "path";
-
-export interface ReadRequest {
-    /** Path of the file to read, resolved against the tool root. */
-    file_path: string;
-}
-
-export interface WriteRequest {
-    /** Path of the file to write, resolved against the tool root. */
-    file_path: string;
-    /** Full UTF-8 contents of the file. */
-    content: string;
-}
-
-export interface EditRequest {
-    /** Path of the file to edit, resolved against the tool root. */
-    file_path: string;
-    /** Literal text to look for. It has to be unique unless `replace_all` is set. */
-    old_string: string;
-    /** Replacement text. An empty string deletes the match. */
-    new_string: string;
-    /** Replace every occurrence instead of requiring a unique match. */
-    replace_all?: boolean;
-}
-
-export interface PwshRequest {
-    /** PowerShell command or script to run. */
-    command: string;
-    /** Working directory, resolved against the tool root. Defaults to the tool root. */
-    cwd?: string;
-    /** Timeout in milliseconds. Defaults to 120000. */
-    timeoutMs?: number;
-}
-
-export interface PwshResult {
-    stdout: string;
-    stderr: string;
-    exitCode: number | null;
-}
+import { isEditParams, isPwshParams, isReadParams, isWriteParams, type PwshResult } from "./types.js";
 
 const DEFAULT_PWSH_TIMEOUT = 120_000;
 const MAX_PWSH_OUTPUT_BYTES = 16 * 1024 * 1024;
@@ -85,22 +48,6 @@ function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function requirePath(value: unknown, method: string): string {
-    if (typeof value !== "string" || value.length === 0) {
-        throw new TypeError(`${method} failed: file_path must be a non-empty string.`);
-    }
-
-    return value;
-}
-
-function requireText(value: unknown, method: string, field: string): string {
-    if (typeof value !== "string") {
-        throw new TypeError(`${method} failed: ${field} must be a string.`);
-    }
-
-    return value;
-}
-
 function countOccurrences(text: string, search: string): number {
     let count = 0;
     let index = text.indexOf(search);
@@ -139,28 +86,33 @@ export class Tools {
     }
 
     /** Read a UTF-8 text file and return its full contents. */
-    read(request: ReadRequest): string {
-        const filePath = requirePath(request?.file_path, "read");
-        const target = this.resolve(filePath);
+    read(params: unknown): string {
+        if (!isReadParams(params)) {
+            throw new Error("Read failed: invalid parameters.");
+        }
+
+        const target = this.resolve(params.file_path);
 
         try {
             return readFileSync(target, "utf8");
         } catch (error) {
-            throw new Error(`Read failed for ${filePath}: ${describeError(error)}`);
+            throw new Error(`Read failed for ${params.file_path}: ${describeError(error)}`);
         }
     }
 
     /** Create or fully overwrite a UTF-8 text file, creating parent directories. */
-    write(request: WriteRequest): void {
-        const filePath = requirePath(request?.file_path, "write");
-        const content = requireText(request?.content, "write", "content");
-        const target = this.resolve(filePath);
+    write(params: unknown): void {
+        if (!isWriteParams(params)) {
+            throw new Error("Write failed: invalid parameters.");
+        }
+
+        const target = this.resolve(params.file_path);
 
         try {
             mkdirSync(path.dirname(target), { recursive: true });
-            writeFileSync(target, content, "utf8");
+            writeFileSync(target, params.content, "utf8");
         } catch (error) {
-            throw new Error(`Write failed for ${filePath}: ${describeError(error)}`);
+            throw new Error(`Write failed for ${params.file_path}: ${describeError(error)}`);
         }
     }
 
@@ -170,30 +122,41 @@ export class Tools {
      * `old_string` has to be unique unless `replace_all` is true, and an empty
      * `old_string` is rejected because it would match everywhere.
      */
-    edit(request: EditRequest): void {
-        const filePath = requirePath(request?.file_path, "edit");
-        const oldText = requireText(request?.old_string, "edit", "old_string");
-        const newText = requireText(request?.new_string, "edit", "new_string");
+    edit(params: unknown): void {
+        if (!isEditParams(params)) {
+            throw new Error("Edit failed: invalid parameters.");
+        }
+
+        const filePath = params.file_path;
+        const oldText = params.old_string;
+        const newText = params.new_string;
+        const replaceAll = params.replace_all === true;
 
         if (oldText.length === 0) {
             throw new Error("Edit failed: old_string must not be empty.");
         }
 
-        const original = this.read({ file_path: filePath });
+        let original: string;
+        try {
+            original = readFileSync(this.resolve(filePath), "utf8");
+        } catch (error) {
+            throw new Error(`Edit failed for ${filePath}: ${describeError(error)}`);
+        }
+
         const occurrences = countOccurrences(original, oldText);
 
         if (occurrences === 0) {
             throw new Error(`Edit failed for ${filePath}: old_string was not found.`);
         }
 
-        if (occurrences > 1 && !request.replace_all) {
+        if (occurrences > 1 && !replaceAll) {
             throw new Error(
                 `Edit failed for ${filePath}: old_string appears ${occurrences} times. ` +
-                    "Make it unique or pass replace_all = true.",
+                "Make it unique or pass replace_all = true.",
             );
         }
 
-        const updated = request.replace_all
+        const updated = replaceAll
             ? original.split(oldText).join(newText)
             : replaceFirst(original, oldText, newText);
 
@@ -207,10 +170,14 @@ export class Tools {
      * `stdout` and `stderr` itself. The command runs with `pwsh` when it is
      * available and falls back to `powershell.exe` on Windows.
      */
-    pwsh(request: PwshRequest): PwshResult {
-        const command = requireText(request?.command, "pwsh", "command");
-        const timeout = request.timeoutMs ?? DEFAULT_PWSH_TIMEOUT;
-        const cwd = request.cwd ? this.resolve(request.cwd) : this.root;
+    pwsh(params: unknown): PwshResult {
+        if (!isPwshParams(params)) {
+            throw new Error("Pwsh failed: invalid parameters.");
+        }
+
+        const command = params.command;
+        const timeout = params.timeoutMs ?? DEFAULT_PWSH_TIMEOUT;
+        const cwd = params.cwd ? this.resolve(params.cwd) : this.root;
         const encoded = Buffer.from(`${PWSH_PRELUDE}\n${command}`, "utf16le").toString("base64");
 
         for (const shell of shellCandidates()) {
