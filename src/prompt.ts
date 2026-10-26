@@ -24,7 +24,7 @@ export const INIT_PROMPT = [
     "- Keep explanations outside the code block.",
     "",
     "The snippet runs in Node with a `tools` object:",
-    "tools.read({ file_path }) -> string",
+    "tools.read({ file_path, offset?, limit? }) -> { path, offset, lines: [{ number, text }], totalLines }",
     "tools.write({ file_path, content })",
     "tools.edit({ file_path, old_string, new_string, replace_all? })",
     "tools.pwsh({ command, cwd?, timeoutMs? }) -> { stdout, stderr, exitCode }",

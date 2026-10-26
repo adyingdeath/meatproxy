@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "path";
-import { isEditParams, isPwshParams, isReadParams, isWriteParams, type PwshResult } from "./types.js";
+import { isEditParams, isPwshParams, isReadParams, isWriteParams, type PwshResult, type ReadResult } from "./types.js";
 
 const DEFAULT_PWSH_TIMEOUT = 120_000;
+const DEFAULT_READ_LIMIT = 2000;
 const MAX_PWSH_OUTPUT_BYTES = 16 * 1024 * 1024;
 
 // PowerShell encodes redirected output with the console code page by default, which
@@ -74,7 +75,7 @@ function replaceFirst(text: string, search: string, replacement: string): string
  * do edit.
  *
  * The code is compiled with a single parameter named `tools`, so it can call
- * `tools.read({ file_path })`, `tools.write({ file_path, content })`,
+ * `tools.read({ file_path, offset, limit })`, `tools.write({ file_path, content })`,
  * `tools.edit({ file_path, old_string, new_string })` and `tools.pwsh({ command })`.
  * All paths are resolved against `root` (the current working directory by default).
  */
@@ -85,19 +86,34 @@ export class Tools {
         this.root = path.resolve(root);
     }
 
-    /** Read a UTF-8 text file and return its full contents. */
-    read(params: unknown): string {
+    /** Read a UTF-8 text file and return line-numbered content. */
+    read(params: unknown): ReadResult {
         if (!isReadParams(params)) {
             throw new Error("Read failed: invalid parameters.");
         }
 
         const target = this.resolve(params.file_path);
+        let content: string;
 
         try {
-            return readFileSync(target, "utf8");
+            content = readFileSync(target, "utf8");
         } catch (error) {
             throw new Error(`Read failed for ${params.file_path}: ${describeError(error)}`);
         }
+
+        const allLines = content.split("\n");
+        const offset = params.offset ? params.offset - 1 : 0;
+        const limit = params.limit ?? DEFAULT_READ_LIMIT;
+
+        return {
+            path: params.file_path,
+            offset,
+            lines: allLines.slice(offset, offset + limit).map((text, index) => ({
+                number: offset + index + 1,
+                text,
+            })),
+            totalLines: allLines.length,
+        };
     }
 
     /** Create or fully overwrite a UTF-8 text file, creating parent directories. */
