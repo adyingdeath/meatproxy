@@ -1,6 +1,6 @@
 import clipboard from "clipboardy";
 import type { Command } from "commander";
-import { INIT_PROMPT } from "../prompt.js";
+import { INIT_PROMPT } from "../constants/prompt.js";
 
 export function registerInit(program: Command) {
     program

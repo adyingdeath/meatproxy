@@ -2,7 +2,7 @@ import { spawnSync } from "child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { isEditParams, isPwshParams, isReadParams, isWriteParams, type PwshResult, type ReadResult } from "./types.js";
-import { ToolCards } from "./tool-card.js";
+import { ToolCards } from "./tool-cards.js";
 
 const DEFAULT_PWSH_TIMEOUT = 120_000;
 const DEFAULT_READ_LIMIT = 2000;

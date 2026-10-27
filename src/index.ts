@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { run } from "./core.js";
+import { run } from "./runner/core.js";
 import { registerInit } from "./commands/init.js";
 
 const program = new Command();

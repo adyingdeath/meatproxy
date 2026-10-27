@@ -1,6 +1,6 @@
 import clipboard from "clipboardy";
 import { Console } from "./console.js";
-import { Tools } from "./tools.js";
+import { Tools } from "../tools/index.js";
 import chalk from "chalk";
 
 export const HEAD_MARKER = "<<<<<<< MEATPROXY";
