@@ -2,6 +2,7 @@ import { spawnSync } from "child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { isEditParams, isPwshParams, isReadParams, isWriteParams, type PwshResult, type ReadResult } from "./types.js";
+import { ToolCards } from "./tool-card.js";
 
 const DEFAULT_PWSH_TIMEOUT = 120_000;
 const DEFAULT_READ_LIMIT = 2000;
@@ -21,11 +22,11 @@ const CLIXML_ERROR_PATTERN = /<S S="Error">([\s\S]*?)<\/S>/g;
 function unescapeClixml(text: string): string {
     return text
         .replace(/_x([0-9a-f]{4})_/gi, (_match, code: string) => String.fromCharCode(Number.parseInt(code, 16)))
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, "\"")
         .replace(/&apos;/g, "'")
-        .replace(/&amp;/g, '&');
+        .replace(/&amp;/g, "&");
 }
 
 function decodePowerShellStderr(stderr: string): string {
@@ -63,21 +64,17 @@ function countOccurrences(text: string, search: string): number {
 
 function replaceFirst(text: string, search: string, replacement: string): string {
     const index = text.indexOf(search);
-    if (index === -1) {
-        return text;
-    }
-
+    if (index === -1) return text;
     return text.slice(0, index) + replacement + text.slice(index + search.length);
+}
+
+function formatError(prefix: string, filePath: string, error: unknown): string {
+    return prefix + " for " + filePath + ": " + describeError(error);
 }
 
 /**
  * Editing tools handed to the clipboard code, so agent can use this object to
  * do edit.
- *
- * The code is compiled with a single parameter named `tools`, so it can call
- * `tools.read({ file_path, offset, limit })`, `tools.write({ file_path, content })`,
- * `tools.edit({ file_path, old_string, new_string })` and `tools.pwsh({ command })`.
- * All paths are resolved against `root` (the current working directory by default).
  */
 export class Tools {
     private readonly root: string;
@@ -89,24 +86,24 @@ export class Tools {
     /** Read a UTF-8 text file and return line-numbered content. */
     read(params: unknown): ReadResult {
         if (!isReadParams(params)) {
+            ToolCards.read({ filePath: "", ok: false });
             throw new Error("Read failed: invalid parameters.");
         }
-
-        const target = this.resolve(params.file_path);
+        const filePath = params.file_path;
+        const target = this.resolve(filePath);
         let content: string;
-
         try {
             content = readFileSync(target, "utf8");
         } catch (error) {
-            throw new Error(`Read failed for ${params.file_path}: ${describeError(error)}`);
+            ToolCards.read({ filePath, ok: false });
+            throw new Error(formatError("Read failed", filePath, error));
         }
-
         const allLines = content.split("\n");
         const offset = params.offset ? params.offset - 1 : 0;
         const limit = params.limit ?? DEFAULT_READ_LIMIT;
-
+        ToolCards.read({ filePath, ok: true });
         return {
-            path: params.file_path,
+            path: filePath,
             offset,
             lines: allLines.slice(offset, offset + limit).map((text, index) => ({
                 number: offset + index + 1,
@@ -119,17 +116,20 @@ export class Tools {
     /** Create or fully overwrite a UTF-8 text file, creating parent directories. */
     write(params: unknown): void {
         if (!isWriteParams(params)) {
+            ToolCards.write({ filePath: "", content: "", ok: false });
             throw new Error("Write failed: invalid parameters.");
         }
-
-        const target = this.resolve(params.file_path);
+        const filePath = params.file_path;
+        const target = this.resolve(filePath);
 
         try {
             mkdirSync(path.dirname(target), { recursive: true });
             writeFileSync(target, params.content, "utf8");
         } catch (error) {
-            throw new Error(`Write failed for ${params.file_path}: ${describeError(error)}`);
+            ToolCards.write({ filePath, content: params.content, ok: false });
+            throw new Error(formatError("Write failed", filePath, error));
         }
+        ToolCards.write({ filePath, content: params.content, ok: true });
     }
 
     /**
@@ -140,6 +140,7 @@ export class Tools {
      */
     edit(params: unknown): void {
         if (!isEditParams(params)) {
+            ToolCards.edit({ filePath: "", oldText: "", newText: "", replaceAll: false, ok: false });
             throw new Error("Edit failed: invalid parameters.");
         }
 
@@ -149,26 +150,31 @@ export class Tools {
         const replaceAll = params.replace_all === true;
 
         if (oldText.length === 0) {
+            ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
             throw new Error("Edit failed: old_string must not be empty.");
         }
 
+        const target = this.resolve(filePath);
         let original: string;
         try {
-            original = readFileSync(this.resolve(filePath), "utf8");
+            original = readFileSync(target, "utf8");
         } catch (error) {
-            throw new Error(`Edit failed for ${filePath}: ${describeError(error)}`);
+            ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
+            throw new Error(formatError("Edit failed", filePath, error));
         }
 
         const occurrences = countOccurrences(original, oldText);
 
         if (occurrences === 0) {
-            throw new Error(`Edit failed for ${filePath}: old_string was not found.`);
+            ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
+            throw new Error(formatError("Edit failed", filePath, new Error("old_string was not found")));
         }
 
         if (occurrences > 1 && !replaceAll) {
+            ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
             throw new Error(
-                `Edit failed for ${filePath}: old_string appears ${occurrences} times. ` +
-                "Make it unique or pass replace_all = true.",
+                "Edit failed for " + filePath + ": old_string appears " + occurrences + " times. "
+                + "Make it unique or pass replace_all = true.",
             );
         }
 
@@ -176,25 +182,28 @@ export class Tools {
             ? original.split(oldText).join(newText)
             : replaceFirst(original, oldText, newText);
 
-        this.write({ file_path: filePath, content: updated });
+        try {
+            writeFileSync(target, updated, "utf8");
+        } catch (error) {
+            ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
+            throw new Error(formatError("Edit failed", filePath, error));
+        }
+        ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: true });
     }
 
     /**
      * Run a PowerShell command synchronously and return its output.
-     *
-     * A non-zero `exitCode` is returned instead of thrown, so the code can inspect
-     * `stdout` and `stderr` itself. The command runs with `pwsh` when it is
-     * available and falls back to `powershell.exe` on Windows.
      */
     pwsh(params: unknown): PwshResult {
         if (!isPwshParams(params)) {
+            ToolCards.pwsh({ command: "", exitCode: null, ok: false });
             throw new Error("Pwsh failed: invalid parameters.");
         }
 
         const command = params.command;
         const timeout = params.timeoutMs ?? DEFAULT_PWSH_TIMEOUT;
         const cwd = params.cwd ? this.resolve(params.cwd) : this.root;
-        const encoded = Buffer.from(`${PWSH_PRELUDE}\n${command}`, "utf16le").toString("base64");
+        const encoded = Buffer.from(PWSH_PRELUDE + "\n" + command, "utf16le").toString("base64");
 
         for (const shell of shellCandidates()) {
             const result = spawnSync(
@@ -212,17 +221,16 @@ export class Tools {
             if (result.error) {
                 const code = (result.error as NodeJS.ErrnoException).code;
 
-                if (code === "ENOENT") {
-                    continue;
-                }
-
+                if (code === "ENOENT") continue;
+                ToolCards.pwsh({ command, exitCode: null, ok: false });
                 if (code === "ETIMEDOUT") {
-                    throw new Error(`Pwsh timed out after ${timeout} ms.`);
+                    throw new Error("Pwsh timed out after " + timeout + " ms.");
                 }
 
-                throw new Error(`Pwsh failed: ${result.error.message}`);
+                throw new Error("Pwsh failed: " + result.error.message);
             }
 
+            ToolCards.pwsh({ command, exitCode: result.status, ok: true });
             return {
                 stdout: result.stdout,
                 stderr: decodePowerShellStderr(result.stderr),
@@ -230,6 +238,7 @@ export class Tools {
             };
         }
 
+        ToolCards.pwsh({ command, exitCode: null, ok: false });
         throw new Error("Pwsh failed: PowerShell is not available on this machine.");
     }
 
