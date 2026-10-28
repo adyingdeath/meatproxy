@@ -214,7 +214,7 @@ export class ToolCards {
             style: S.headerContent,
         }], S.header);
 
-        if (opts.oldText.length > 0 || opts.newText.length > 0) {
+        if (opts.ok && (opts.oldText.length > 0 || opts.newText.length > 0)) {
             drawDiff(opts.oldText, opts.newText);
         }
 
