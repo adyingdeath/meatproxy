@@ -50,28 +50,6 @@ function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function countOccurrences(text: string, search: string): number {
-    let count = 0;
-    let index = text.indexOf(search);
-
-    while (index !== -1) {
-        count += 1;
-        index = text.indexOf(search, index + search.length);
-    }
-
-    return count;
-}
-
-function replaceFirst(text: string, search: string, replacement: string): string {
-    const index = text.indexOf(search);
-    if (index === -1) return text;
-    return text.slice(0, index) + replacement + text.slice(index + search.length);
-}
-
-function formatError(prefix: string, filePath: string, error: unknown): string {
-    return prefix + " for " + filePath + ": " + describeError(error);
-}
-
 /**
  * Editing tools handed to the clipboard code, so agent can use this object to
  * do edit.
@@ -96,7 +74,7 @@ export class Tools {
             content = readFileSync(target, "utf8");
         } catch (error) {
             ToolCards.read({ filePath, ok: false });
-            throw new Error(formatError("Read failed", filePath, error));
+            throw new Error(`Read failed for ${filePath}: ${describeError(error)}`);
         }
         const allLines = content.split("\n");
         const offset = params.offset ? params.offset - 1 : 0;
@@ -127,7 +105,7 @@ export class Tools {
             writeFileSync(target, params.content, "utf8");
         } catch (error) {
             ToolCards.write({ filePath, content: params.content, ok: false });
-            throw new Error(formatError("Write failed", filePath, error));
+            throw new Error(`Write failed for ${filePath}: ${describeError(error)}`);
         }
         ToolCards.write({ filePath, content: params.content, ok: true });
     }
@@ -160,33 +138,36 @@ export class Tools {
             original = readFileSync(target, "utf8");
         } catch (error) {
             ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
-            throw new Error(formatError("Edit failed", filePath, error));
+            throw new Error(`Edit failed for ${filePath}: ${describeError(error)}`);
         }
 
-        const occurrences = countOccurrences(original, oldText);
-
-        if (occurrences === 0) {
+        const firstIndex = original.indexOf(oldText);
+        if (firstIndex === -1) {
+            // Old text not found
             ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
-            throw new Error(formatError("Edit failed", filePath, new Error("old_string was not found")));
+            throw new Error(`Edit failed for ${filePath}: old_string was not found.`);
         }
 
-        if (occurrences > 1 && !replaceAll) {
+        const secondIndex = original.indexOf(oldText, firstIndex + oldText.length);
+        if (secondIndex !== -1 && !replaceAll) {
+            // No replaceAll but find more than one occurrances.
             ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
             throw new Error(
-                "Edit failed for " + filePath + ": old_string appears " + occurrences + " times. "
-                + "Make it unique or pass replace_all = true.",
+                `Edit failed for ${filePath}: old_string appears multiple times. `
+                + "Make it unique or pass replace_all = true."
             );
         }
 
-        const updated = replaceAll
-            ? original.split(oldText).join(newText)
-            : replaceFirst(original, oldText, newText);
+        // Use function as the second parameter, or parameter like "$$" will be
+        // interpreted to have special meaning:
+        // "123".replaceAll("2","$$") will be "1$3"
+        const updated = original.replaceAll(oldText, () => newText);
 
         try {
             writeFileSync(target, updated, "utf8");
         } catch (error) {
             ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
-            throw new Error(formatError("Edit failed", filePath, error));
+            throw new Error(`Edit failed for ${filePath}: ${describeError(error)}`);
         }
         ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: true });
     }
