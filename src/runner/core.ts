@@ -6,8 +6,8 @@ import chalk from "chalk";
 export const HEAD_MARKER = "<<<<<<< MEATPROXY";
 export const TAIL_MARKER = ">>>>>>> MEATPROXY";
 
-export const OUTPUT_HEAD_MARKER = "<<<<<<< MEATPROXY OUTPUT";
-export const OUTPUT_TAIL_MARKER = ">>>>>>> MEATPROXY OUTPUT";
+export const OUTPUT_HEAD_MARKER = "<<<<<<< MEATPROXY OUTPUT\n";
+export const OUTPUT_TAIL_MARKER = "\n>>>>>>> MEATPROXY OUTPUT\n\n";
 
 const INVALID_MARKER_MESSAGE = `Error: Invalid format.
 Expected format:
