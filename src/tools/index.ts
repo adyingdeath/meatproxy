@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { isEditParams, isPwshParams, isReadParams, isWriteParams, type PwshResult, type ReadResult } from "./types.js";
 import { ToolCards } from "./tool-cards.js";
+import { toDiffLines } from "./card-diff.js";
 
 const DEFAULT_PWSH_TIMEOUT = 120_000;
 const DEFAULT_READ_LIMIT = 2000;
@@ -118,7 +119,7 @@ export class Tools {
      */
     edit(params: unknown): void {
         if (!isEditParams(params)) {
-            ToolCards.edit({ filePath: "", oldText: "", newText: "", replaceAll: false, ok: false });
+            ToolCards.edit({ filePath: "", replaceAll: false, ok: false });
             throw new Error("Edit failed: invalid parameters.");
         }
 
@@ -128,7 +129,7 @@ export class Tools {
         const replaceAll = params.replace_all === true;
 
         if (oldText.length === 0) {
-            ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
+            ToolCards.edit({ filePath, replaceAll, ok: false });
             throw new Error("Edit failed: old_string must not be empty.");
         }
 
@@ -137,21 +138,21 @@ export class Tools {
         try {
             original = readFileSync(target, "utf8");
         } catch (error) {
-            ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
+            ToolCards.edit({ filePath, replaceAll, ok: false });
             throw new Error(`Edit failed for ${filePath}: ${describeError(error)}`);
         }
 
         const firstIndex = original.indexOf(oldText);
         if (firstIndex === -1) {
             // Old text not found
-            ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
+            ToolCards.edit({ filePath, replaceAll, ok: false });
             throw new Error(`Edit failed for ${filePath}: old_string was not found.`);
         }
 
         const secondIndex = original.indexOf(oldText, firstIndex + oldText.length);
         if (secondIndex !== -1 && !replaceAll) {
             // No replaceAll but find more than one occurrances.
-            ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
+            ToolCards.edit({ filePath, replaceAll, ok: false });
             throw new Error(
                 `Edit failed for ${filePath}: old_string appears multiple times. `
                 + "Make it unique or pass replace_all = true."
@@ -166,10 +167,13 @@ export class Tools {
         try {
             writeFileSync(target, updated, "utf8");
         } catch (error) {
-            ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: false });
+            ToolCards.edit({ filePath, replaceAll, ok: false });
             throw new Error(`Edit failed for ${filePath}: ${describeError(error)}`);
         }
-        ToolCards.edit({ filePath, oldText, newText, replaceAll, ok: true });
+
+        const diff = toDiffLines(original, updated);
+
+        ToolCards.edit({ filePath, replaceAll, ok: true, diff });
     }
 
     /**

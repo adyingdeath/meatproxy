@@ -1,5 +1,7 @@
 import chalk from "chalk";
 import terminalSize from "terminal-size";
+import { groupDiffHunks, toPairs, type DiffLine, type DiffPair, type DiffRow } from "./card-diff.js";
+import { type LinePart, type Style } from "./card-types.js";
 
 function width(): number {
     let cols = FALLBACK_WIDTH;
@@ -14,12 +16,17 @@ function width(): number {
     return cols - 10;
 }
 
+function truncate(text: string, maxLen: number): string {
+    if (text.length <= maxLen) return text;
+    if (maxLen <= 0) return "";
+    if (maxLen <= 3) return ".".repeat(maxLen);
+    return text.slice(0, maxLen - 3) + "...";
+}
+
 const PAD = "  ";
 const FALLBACK_WIDTH = 80;
 const SPLIT_MIN_WIDTH = 80;
 const INNER_WIDTH = width() - PAD.length * 2;
-
-type Style = (text: string) => string;
 
 // #fcebdf oklch(0.95 0.025 56)
 // #783f09 oklch(0.43 0.1 56)
@@ -39,11 +46,6 @@ const S = {
     add: (t: string) => chalk.bgHex("#f5f1ef").hex("#005E19")(t),
 } as const;
 
-interface LinePart {
-    text: string;
-    style: Style;
-}
-
 export interface ReadCardOptions {
     filePath: string;
     ok: boolean;
@@ -57,10 +59,13 @@ export interface WriteCardOptions {
 
 export interface EditCardOptions {
     filePath: string;
-    oldText: string;
-    newText: string;
     replaceAll: boolean;
     ok: boolean;
+    /**
+     * Line-level diff of the whole file. Present on success; the card renders
+     * nothing but the header and status when absent.
+     */
+    diff?: DiffLine[] | undefined;
 }
 
 export interface PwshCardOptions {
@@ -86,19 +91,12 @@ export class ToolCards {
         return cols - 10;
     }
 
-    private static truncate(text: string, maxLen: number): string {
-        if (text.length <= maxLen) return text;
-        if (maxLen <= 0) return "";
-        if (maxLen <= 3) return ".".repeat(maxLen);
-        return text.slice(0, maxLen - 3) + "...";
-    }
-
     /** Keep maxLines of text, every lines truncated by maxLen */
     private static blockLines(text: string, maxLines: number, maxLen: number): string[] {
         const parts = text.split("\n");
         const shown = parts.slice(0, maxLines);
         return shown.map((raw) => {
-            return ToolCards.truncate(raw.replace(/\r$/, ""), Math.max(0, maxLen));
+            return truncate(raw.replace(/\r$/, ""), Math.max(0, maxLen));
         });
     }
 
@@ -171,41 +169,6 @@ export class ToolCards {
     }
 
     static edit(opts: EditCardOptions): void {
-        const BLOCK_MAX_LINES = 8
-        const SEP = " \u2502 ";
-
-        const drawDiff = (from: string, to: string): void => {
-            const cellTotal = INNER_WIDTH - 4 - SEP.length;
-
-            if (INNER_WIDTH < SPLIT_MIN_WIDTH || cellTotal < 10) {
-                const bodyMax = INNER_WIDTH - 2;
-                for (const text of ToolCards.blockLines(from, BLOCK_MAX_LINES, bodyMax)) {
-                    ToolCards.line([{ text: "- " + text, style: S.del }], S.body);
-                }
-                for (const text of ToolCards.blockLines(to, BLOCK_MAX_LINES, bodyMax)) {
-                    ToolCards.line([{ text: "+ " + text, style: S.add }], S.body);
-                }
-                return;
-            }
-
-            const leftW = Math.floor(cellTotal / 2);
-            const rightW = cellTotal - leftW;
-            const left = ToolCards.blockLines(from, BLOCK_MAX_LINES, leftW);
-            const right = ToolCards.blockLines(to, BLOCK_MAX_LINES, rightW);
-
-            for (let i = 0; i < Math.max(left.length, right.length); i++) {
-                const a = left[i];
-                const b = right[i];
-                const leftText = a === undefined ? "░".repeat(leftW + 2) : "- " + a.padEnd(leftW);
-                const rightText = b === undefined ? "░".repeat(rightW + 2) : "+ " + b.padEnd(rightW);
-                ToolCards.line([
-                    { text: leftText, style: a === undefined ? S.body : S.del },
-                    { text: SEP, style: S.body },
-                    { text: rightText, style: b === undefined ? S.body : S.add },
-                ], S.body);
-            }
-        };
-
         ToolCards.line([{
             text: "edit ",
             style: S.header,
@@ -214,10 +177,102 @@ export class ToolCards {
             style: S.headerContent,
         }], S.header);
 
-        if (opts.ok && (opts.oldText.length > 0 || opts.newText.length > 0)) {
-            drawDiff(opts.oldText, opts.newText);
-        }
+        if (opts.ok && opts.diff && opts.diff.length > 0) {
+            const MAX_HUNKS = 3;
+            const MAX_ROWS = 10;
+            const hunks = groupDiffHunks(opts.diff);
+            const moreHunks = hunks.length - MAX_HUNKS;
+            const shownHunks = moreHunks > 0 ? hunks.slice(0, MAX_HUNKS) : hunks;
 
+            const renderSingle = (rows: DiffRow[]): void => {
+                const capped = ToolCards.capRows(rows, MAX_ROWS);
+                // Calculate the most characters line numbers can occupy.
+                let gutter = 1;
+                for (const row of capped) {
+                    if (row.kind === "gap") continue;
+                    gutter = Math.max(
+                        gutter,
+                        String(row.oldLine ?? row.newLine ?? 0).length
+                    );
+                }
+                const textMax = Math.max(4, INNER_WIDTH - 2 - gutter - 1);
+                for (const row of capped) {
+                    if (row.kind === "gap") {
+                        ToolCards.line([{ text: row.text, style: S.body }], S.body);
+                        continue;
+                    }
+                    const [sign, ln, style] = (
+                        row.kind === "add" ? ["+", row.newLine, S.add] :
+                        row.kind === "del" ? ["-", row.oldLine, S.del] :
+                        [" ", "", S.body]
+                    );
+                    const text = truncate(row.text.replace(/\r$/, ""), textMax);
+                    ToolCards.line([{ text: sign + String(ln ?? "").padStart(gutter) + " " + text, style }], S.body);
+                }
+            };
+
+            const renderSplit = (rows: DiffRow[]): void => {
+                const capped = ToolCards.capPairs(toPairs(rows), MAX_ROWS);
+                const SEP = " \u2502 ";
+                const cellTotal = INNER_WIDTH - SEP.length;
+                const leftW = Math.floor(cellTotal / 2);
+                const rightW = cellTotal - leftW;
+
+                let leftGutter = 1;
+                let rightGutter = 1;
+                for (const pair of capped) {
+                    if (pair.kind === "gap") continue;
+                    leftGutter = Math.max(leftGutter, String(pair.left?.oldLine ?? 0).length);
+                    rightGutter = Math.max(rightGutter, String(pair.right?.newLine ?? 0).length);
+                }
+
+                const leftMax = Math.max(4, leftW - 2 - leftGutter);
+                const rightMax = Math.max(4, rightW - 2 - rightGutter);
+
+                const cell = (
+                    line: DiffLine | undefined, side: "old" | "new",
+                    cellW: number, gutterW: number, maxLen: number
+                ): LinePart => {
+                    if (!line) return { text: "\u2591".repeat(cellW), style: S.body };
+                    const ln = side === "old" ? line.oldLine : line.newLine;
+                    const [sign, style] = (
+                        line.kind === "add" ? ["+", S.add] :
+                        line.kind === "del" ? ["-", S.del] :
+                        [" ", S.body]
+                    );
+                    const text = truncate(line.text.replace(/\r$/, ""), maxLen);
+                    return { text: (sign + String(ln ?? "").padStart(gutterW) + " " + text).padEnd(cellW), style };
+                };
+
+                for (const pair of capped) {
+                    if (pair.kind === "gap") {
+                        ToolCards.line([{ text: pair.text, style: S.body }], S.body);
+                        continue;
+                    }
+                    ToolCards.line([
+                        cell(pair.left, "old", leftW, leftGutter, leftMax),
+                        { text: SEP, style: S.body },
+                        cell(pair.right, "new", rightW, rightGutter, rightMax),
+                    ], S.body);
+                }
+            };
+
+            shownHunks.forEach((hunk, index) => {
+                if (index > 0) {
+                    const gapText = hunk.gap?.text ?? "...";
+                    ToolCards.line([{ text: gapText, style: S.body }], S.body);
+                }
+                if (INNER_WIDTH < SPLIT_MIN_WIDTH) {
+                    renderSingle(hunk.rows);
+                } else {
+                    renderSplit(hunk.rows);
+                }
+            });
+
+            if (moreHunks > 0) {
+                ToolCards.line([{ text: "... " + moreHunks + " more hunk" + (moreHunks === 1 ? "" : "s"), style: S.body }], S.body);
+            }
+        }
         if (opts.ok) {
             ToolCards.line([{ text: "success", style: S.ok }], S.body);
         } else {
@@ -245,5 +300,19 @@ export class ToolCards {
             }
         }
         console.log();
+    }
+
+    private static capRows(rows: DiffRow[], maxRows: number): DiffRow[] {
+        if (rows.length <= maxRows) return rows;
+        const shown = rows.slice(0, maxRows - 1);
+        const hidden = rows.length - shown.length;
+        return [...shown, { kind: "gap", text: "... " + hidden + " more line" + (hidden === 1 ? "" : "s") }];
+    }
+
+    private static capPairs(pairs: DiffPair[], maxRows: number): DiffPair[] {
+        if (pairs.length <= maxRows) return pairs;
+        const shown = pairs.slice(0, maxRows - 1);
+        const hidden = pairs.length - shown.length;
+        return [...shown, { kind: "gap", text: "... " + hidden + " more line" + (hidden === 1 ? "" : "s") }];
     }
 }
