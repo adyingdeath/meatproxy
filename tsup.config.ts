@@ -11,4 +11,7 @@ export default defineConfig({
   splitting: false,
   shims: true,
   dts: false,
+  define: {
+    __VERSION__: JSON.stringify("1.1.0"),
+  },
 });

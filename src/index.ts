@@ -8,7 +8,7 @@ const program = new Command();
 program
     .name("mtp")
     .description("MeatProxy CLI")
-    .version("1.0.1")
+    .version(__VERSION__)
     .addHelpText("after", `
 Usage:
   1. mtp init | copy the agent prompt to the clipboard

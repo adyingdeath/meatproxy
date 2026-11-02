@@ -31,13 +31,15 @@ mtp init
 mtp
 ```
 
+Run `mtp --help` to see the workflow again at any time.
+
 `mtp init` copies the prompt and prints what to do next. `mtp` reads the clipboard, extracts the snippet, runs it, prints the output, and copies that output back to the clipboard.
 
 The snippet runs with the same access as your terminal, so only paste replies you trust.
 
 ## Tools
 
-The snippet gets a `tools` object with four methods: `read`, `write`, `edit` and `pwsh`, enough to inspect files, change them, and run PowerShell commands.
+The snippet gets a `tools` object with four methods: `read`, `write`, `edit` and `pwsh`, enough to inspect files, change them, and run PowerShell commands. Each call prints a small card with its result, and `edit` also shows a diff of the change.
 
 ## Development
 

@@ -1,6 +1,6 @@
 {
   "name": "@adyingdeath/meatproxy",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "MeatProxy is a small bridge between your clipboard and chatbots.",
   "scripts": {
     "dev": "tsx src/index.ts",
