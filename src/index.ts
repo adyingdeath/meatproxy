@@ -9,6 +9,16 @@ program
     .name("mtp")
     .description("MeatProxy CLI")
     .version("1.0.1")
+    .addHelpText("after", `
+Usage:
+  1. mtp init | copy the agent prompt to the clipboard
+  2.          | paste it into a web chatbot and describe what you want
+  3.          | copy the chatbot's reply
+  4. mtp      | run the snippet locally; its output is copied back to the clipboard
+  5.          | paste the output back to the chatbot and repeat
+
+Snippets run with the same access as your terminal; only run replies you trust.
+`)
     .action(run);
 
 registerInit(program);
