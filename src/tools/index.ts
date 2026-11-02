@@ -77,13 +77,20 @@ export class Tools {
             ToolCards.read({ filePath, ok: false });
             throw new Error(`Read failed for ${filePath}: ${describeError(error)}`);
         }
-        const allLines = content.split("\n");
-        const offset = params.offset ? params.offset - 1 : 0;
+        const normalized = content.replace(/\r\n/g, "\n");
+        const allLines = normalized.split("\n");
+        // A trailing newline produces one empty element; drop it so totalLines
+        // and the returned lines match what an editor shows.
+        if (allLines.length > 0 && allLines[allLines.length - 1] === "") {
+            allLines.pop();
+        }
+        // 0-based
+        const offset = (params.offset ?? 1) - 1;
         const limit = params.limit ?? DEFAULT_READ_LIMIT;
         ToolCards.read({ filePath, ok: true });
         return {
             path: filePath,
-            offset,
+            offset: offset + 1, // 1-based
             lines: allLines.slice(offset, offset + limit).map((text, index) => ({
                 number: offset + index + 1,
                 text,
@@ -142,14 +149,22 @@ export class Tools {
             throw new Error(`Edit failed for ${filePath}: ${describeError(error)}`);
         }
 
-        const firstIndex = original.indexOf(oldText);
+        // Work in LF internally and restore the file's own EOL on write, so
+        // matching does not depend on how the caller spelled newlines.
+        const eol = original.includes("\r\n") ? "\r\n" : "\n";
+        const lf = (text: string) => text.replace(/\r\n/g, "\n");
+
+        const lfOriginal = lf(original);
+        const lfOldText = lf(oldText);
+
+        const firstIndex = lfOriginal.indexOf(lfOldText);
         if (firstIndex === -1) {
             // Old text not found
             ToolCards.edit({ filePath, replaceAll, ok: false });
             throw new Error(`Edit failed for ${filePath}: old_string was not found.`);
         }
 
-        const secondIndex = original.indexOf(oldText, firstIndex + oldText.length);
+        const secondIndex = lfOriginal.indexOf(lfOldText, firstIndex + lfOldText.length);
         if (secondIndex !== -1 && !replaceAll) {
             // No replaceAll but find more than one occurrances.
             ToolCards.edit({ filePath, replaceAll, ok: false });
@@ -162,7 +177,9 @@ export class Tools {
         // Use function as the second parameter, or parameter like "$$" will be
         // interpreted to have special meaning:
         // "123".replaceAll("2","$$") will be "1$3"
-        const updated = original.replaceAll(oldText, () => newText);
+        const updated = lfOriginal
+            .replaceAll(lfOldText, () => lf(newText))
+            .replace(/\n/g, eol);
 
         try {
             writeFileSync(target, updated, "utf8");

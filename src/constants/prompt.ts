@@ -18,6 +18,7 @@ Guidelines:
 - Do one step per snippet: the user runs it, then pastes the output back to you.
 - Use console.log for results and progress; you will see everything it prints.
 - Keep explanations outside the code block, best to place it at the very end of the whole replies.
+- Newlines: \`read\`/\`edit\` work in LF; the cli converts CRLF automatically. Just use LF in \`old_string\`/\`new_string\`.
 
 The snippet runs in Node with a \`tools\` object:
 

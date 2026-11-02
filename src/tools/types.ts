@@ -10,6 +10,7 @@ export interface ReadParams {
 
 export interface ReadResult {
     path: string;
+    /** 1-based line number of the first returned line. */
     offset: number;
     lines: {
         number: number;
